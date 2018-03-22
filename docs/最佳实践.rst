@@ -1,0 +1,103 @@
+最佳实践
+===================================
+
+1. 忽略你不想要的任务结果
+-----------------------------------
+
+有时候我们并不关心任务执行的结果, 那么就可以ignore_result选项让任务忽略结果, 毕竟存储结果费时也费资源 ::
+
+    @app.task(ignore_result=True)
+    def mytask():
+        something()
+        
+我们也可以通过全局配置选项task_ignore_result 来进行设置
+
+
+2. 避免产生同步的子任务
+-----------------------------------
+
+让一个任务等待另一个任务的结果是非常效率低下的, 甚至当worker池耗尽的时候可能造成死锁
+
+在设计任务时确保使用异步模式, 例如使用回调
+
+**Bad** ::
+
+    @app.task
+    def update_page_info(url):
+        page = fetch_page.delay(url).get()
+        info = parse_page.delay(url, page).get()
+        store_page_info.delay(url, info)
+
+    @app.task
+    def fetch_page(url):
+        return myhttplib.get(url)
+
+    @app.task
+    def parse_page(url, page):
+        return myparser.parse_document(page)
+
+    @app.task
+    def store_page_info(url, info):
+        return PageInfo.objects.create(url, info)
+
+**Good** ::
+
+    def update_page_info(url):
+        # fetch_page -> parse_page -> store_page
+        chain = fetch_page.s(url) | parse_page.s() | store_page_info.s(url)
+        chain()
+
+    @app.task()
+    def fetch_page(url):
+        return myhttplib.get(url)
+
+    @app.task()
+    def parse_page(page):
+        return myparser.parse_document(page)
+
+    @app.task(ignore_result=True)
+    def store_page_info(info, url):
+        PageInfo.objects.create(url=url, info=info)
+        
+默认情况下, Celery会禁止以同步的方式运行子任务, 有些极端情况下你可能不得不这么做, 但是强烈建议你不这么做 ::
+
+    @app.task
+    def update_page_info(url):
+        page = fetch_page.delay(url).get(disable_sync_subtasks=False)
+        info = parse_page.delay(url, page).get(disable_sync_subtasks=False)
+        store_page_info.delay(url, info)
+
+    @app.task
+    def fetch_page(url):
+        return myhttplib.get(url)
+
+    @app.task
+    def parse_page(url, page):
+        return myparser.parse_document(page)
+
+    @app.task
+    def store_page_info(url, info):
+        return PageInfo.objects.create(url, info)
+
+
+3. 性能和策略
+-----------------------------------
+
+任务粒度
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+我们通过每个子任务的计算量来评价任务的粒度, 通常来说我们最好是把任务切割成多个小的子任务, 而不是把任务设计成
+
+少量的耗时久的任务 ::
+
+    如果你的单个任务的代码达到数百行, 通常表明你的任务粒度太粗, 有优化的空间
+    
+通过小的任务, 我们可以并行处理更多的任务, 耗时久的任务会导致worker没有办法处理其他等待的任务
+
+然而, 执行任务是有额外开销的, 每次处理一个任务都需要发送一个消息, 另外数据可能不在本地等; 因为如果任务过于
+细粒度, 增加的额外开销可能会抵消带来的好处 ::
+
+    个人感觉和操作系统进程调度的时间片设计有点类似, 时间片太长, 可能导致部分进程长时间无法响应; 时间片太短,
+    那么CPU耗费大量的时间用于进程切换, 越来越认同"计算机是一门妥协的艺术"这句话, 人生何尝不是呢!
+
+
