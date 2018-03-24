@@ -144,3 +144,24 @@
     
 数据库事务
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+以下是一个Django的视图, 我们首先在数据库里创建一篇文章, 然后将其主键作为参数传递给任务, 这里用到commit_on_success \
+装饰器, 它会在视图返回时自动提交事务, 或者在触发异常时自动回滚. ::
+
+    from django.db import transaction
+
+    @transaction.commit_on_success
+    def create_article(request):
+        article = Article.objects.create()
+        expand_abbreviations.delay(article.pk)
+
+这里也存在一个竞态条件: 如果任务在事务被提交前开始执行, 那么其实在数据库中是获取不到这篇文章的(这里假设worker \
+使用的数据库连接设置的事务隔离级别不是Read Uncommitted).
+
+该问题的解决办法是使用on_commit回调来发送任务一旦所有事务被成功提交: ::
+
+    from django.db.transaction import on_commit
+
+    def create_article(request):
+        article = Article.objects.create()
+        on_commit(lambda: expand_abbreviations.delay(article.pk))
