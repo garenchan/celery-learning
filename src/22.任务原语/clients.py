@@ -1,6 +1,6 @@
 from celery import chain, group, chord
 
-from tasks import add, xsum
+from tasks import add, xsum, raise_error, on_chord_error
 
 
 if __name__ == '__main__':
@@ -27,5 +27,12 @@ if __name__ == '__main__':
     res = chord((add.s(i, i) for i in range(10)), xsum.s())()
     # is equal to: group(add.s(i, i) for i in range(10)) | xsum.s()
     print('Chord result: %s' % res.get())
+    
+    res = chord([add.s(2, 2), raise_error.s(), add.s(4, 4)], xsum.s())()
+    print(res.get(propagate=False))
+    
+    print('Map result: %s' % ~xsum.map([list(range(10)), list(range(100))]))
+    print('Starmap result: %s' % ~add.starmap(zip(range(10), range(10))))
+    print('Chunks result: %s' % ~add.chunks(zip(range(100), range(100)), 10))
 
 
