@@ -11,7 +11,7 @@ logs_exchange = Exchange('logs', type='fanout')
 
 app.conf.task_queues = [
     Queue('tasks', task_exchange, routing_key='tasks'),
-    Queue('logs', logs_exchange)
+    Queue('logs', logs_exchange, routing_key='logs'),
 ]
 
 app.conf.task_routes = {
@@ -20,7 +20,8 @@ app.conf.task_routes = {
         'routing_key': 'tasks',
     },
     'tasks.log': {
-        'exchange': 'logs'
+        'exchange': 'logs',
+        'routing_key': 'logs',
     }
 }
 
@@ -30,6 +31,6 @@ def add(x, y):
     return x + y
 
 
-@app.task
+@app.task(ignore_result=True)
 def log(level, message):
     print('[{0}]: {1}'.format(level, message))
