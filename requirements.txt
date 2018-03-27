@@ -1,3 +1,12 @@
 celery==4.0.2
+# monitor
 flower==0.9.2
+
+# security
 pyOpenSSL==17.5.0
+
+# unit test
+pytest==3.5.0
+
+# extensions
+setuptools==39.0.1
